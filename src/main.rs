@@ -20,6 +20,16 @@ use ratatui::Terminal;
 use app::App;
 
 fn main() -> io::Result<()> {
+    let json_mode = std::env::args().any(|a| a == "--json");
+
+    if json_mode {
+        let mut app = App::new();
+        app.refresh();
+        let output = app.to_json();
+        println!("{output}");
+        return Ok(());
+    }
+
     // Check accessibility
     if !warp::is_accessibility_trusted() {
         eprintln!("WARNING: Not trusted for Accessibility.");

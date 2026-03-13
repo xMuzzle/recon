@@ -89,6 +89,64 @@ end tell"#
         .output();
 }
 
+/// Get the titles of all Warp tabs via the Window menu's AX tree.
+/// Returns them in display order (matching Cmd+1, Cmd+2, ...).
+pub fn get_tab_titles() -> Vec<String> {
+    let pid = match find_warp_pid() {
+        Some(p) => p,
+        None => return vec![],
+    };
+    let app = unsafe { AXUIElementCreateApplication(pid) };
+    if app.is_null() {
+        return vec![];
+    }
+
+    let menu_bar = match get_attr_value(app, "AXMenuBar") {
+        Some(v) => v as AXUIElementRef,
+        None => return vec![],
+    };
+
+    let menu_bar_items = get_attr_children(menu_bar);
+    let window_menu_bar_item = match menu_bar_items.iter().find(|item| {
+        get_attr_string(**item, "AXTitle")
+            .map(|t| t == "Window")
+            .unwrap_or(false)
+    }) {
+        Some(item) => *item,
+        None => return vec![],
+    };
+
+    let submenus = get_attr_children(window_menu_bar_item);
+    let window_menu = match submenus.first() {
+        Some(m) => *m,
+        None => return vec![],
+    };
+
+    let mut titles = Vec::new();
+    for item in get_attr_children(window_menu) {
+        let id = get_attr_string(item, "AXIdentifier").unwrap_or_default();
+        if id == "makeKeyAndOrderFront:" {
+            let title = get_attr_string(item, "AXTitle").unwrap_or_default();
+            titles.push(title);
+        }
+    }
+    titles
+}
+
+fn find_warp_pid() -> Option<i32> {
+    let output = std::process::Command::new("ps")
+        .args(["-eo", "pid,comm"])
+        .output()
+        .ok()?;
+    let s = String::from_utf8_lossy(&output.stdout);
+    for line in s.lines() {
+        if line.contains("Warp.app") && !line.contains("terminal-server") {
+            return line.trim().split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
+}
+
 fn _find_tab_menu_action(app: AXUIElementRef, action_title: &str) -> Option<AXUIElementRef> {
     let menu_bar = get_attr_value(app, "AXMenuBar")? as AXUIElementRef;
     let menu_bar_items = get_attr_children(menu_bar);

@@ -28,13 +28,25 @@ impl App {
 
     pub fn refresh(&mut self) {
         let procs = process::discover_claude_processes();
-        let sessions = session::resolve_sessions(&procs, &self.prev_sessions);
+        let mut sessions = session::resolve_sessions(&procs, &self.prev_sessions);
 
         // Store for next incremental parse
         self.prev_sessions = sessions
             .iter()
             .map(|s| (s.session_id.clone(), s.clone()))
             .collect();
+
+        // Merge Warp tab titles by tab_number (1-indexed)
+        let tab_titles = warp::get_tab_titles();
+        for session in sessions.iter_mut() {
+            if let Some(n) = session.tab_number {
+                if let Some(title) = tab_titles.get((n - 1) as usize) {
+                    if !title.is_empty() {
+                        session.tab_title = Some(title.clone());
+                    }
+                }
+            }
+        }
 
         self.sessions = sessions;
 
@@ -64,17 +76,51 @@ impl App {
                 self.refresh();
             }
             KeyCode::Char(c) if c.is_ascii_digit() && c != '0' => {
-                let n = c as u8 - b'0';
-                self.jump_to_session((n - 1) as usize);
+                // Number keys jump to the session at that list position
+                let idx = (c as u8 - b'1') as usize;
+                self.jump_to_session(idx);
             }
             _ => {}
         }
     }
 
     fn jump_to_session(&self, idx: usize) {
-        if idx < self.sessions.len() {
-            warp::switch_to_tab_number((idx + 1) as u8);
+        if let Some(session) = self.sessions.get(idx) {
+            if let Some(tab) = session.tab_number {
+                warp::switch_to_tab_number(tab);
+            }
         }
+    }
+
+    pub fn to_json(&self) -> String {
+        let sessions: Vec<serde_json::Value> = self
+            .sessions
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "session_id": s.session_id,
+                    "project_name": s.project_name,
+                    "tab_title": s.tab_title,
+                    "tab_number": s.tab_number,
+                    "model": s.model,
+                    "model_display": s.model_display(&self.effort_level),
+                    "total_input_tokens": s.total_input_tokens,
+                    "total_output_tokens": s.total_output_tokens,
+                    "tokens_display": s.token_display(),
+                    "token_ratio": s.token_ratio(),
+                    "status": s.status.label(),
+                    "pid": s.pid,
+                    "tty": s.tty,
+                    "last_activity": s.last_activity,
+                })
+            })
+            .collect();
+
+        serde_json::to_string_pretty(&serde_json::json!({
+            "sessions": sessions,
+            "effort_level": self.effort_level,
+        }))
+        .unwrap_or_else(|_| "{}".to_string())
     }
 }
 

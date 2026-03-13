@@ -40,7 +40,10 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, session)| {
-            let num = format!(" {} ", i + 1);
+            let num = match session.tab_number {
+                Some(n) => format!(" {} ", n),
+                None => format!(" {} ", i + 1),
+            };
 
             let status_style = match session.status {
                 SessionStatus::Working => Style::default().fg(Color::Green),
@@ -67,7 +70,10 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
 
             let row = Row::new(vec![
                 Cell::from(num),
-                Cell::from(session.project_name.clone()),
+                Cell::from(match &session.tab_title {
+                    Some(title) => format!("[{}] {}", title, session.project_name),
+                    None => session.project_name.clone(),
+                }),
                 Cell::from(session.status.label()).style(status_style),
                 Cell::from(session.model_display(&app.effort_level)),
                 Cell::from(session.token_display()).style(token_style),

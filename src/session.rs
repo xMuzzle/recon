@@ -30,6 +30,8 @@ impl SessionStatus {
 pub struct Session {
     pub session_id: String,
     pub project_name: String,
+    pub tab_title: Option<String>,
+    pub tab_number: Option<u8>,
     pub model: Option<String>,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
@@ -132,6 +134,8 @@ pub fn resolve_sessions(
         sessions.push(Session {
             session_id,
             project_name,
+            tab_title: None, // populated later by App::refresh via warp::get_tab_titles
+            tab_number: proc.tab_number,
             model: model_id,
             total_input_tokens: input_tokens,
             total_output_tokens: output_tokens,
@@ -149,8 +153,9 @@ pub fn resolve_sessions(
 
 /// Encode a CWD path the same way Claude does for project directories.
 /// `/Users/gavra/repos/yaba` -> `-Users-gavra-repos-yaba`
+/// Also replaces `.` (removed) and `_` (to `-`).
 fn encode_project_path(path: &str) -> String {
-    path.replace('/', "-")
+    path.replace('/', "-").replace('.', "-").replace('_', "-")
 }
 
 /// Find the best matching JSONL file in a project directory.
