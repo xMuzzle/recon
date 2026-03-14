@@ -10,46 +10,9 @@ See all your Claude sessions at a glance — what they're working on, which need
 
 A visual dashboard where each agent is a pixel-art creature living in a room. Designed for a side monitor — glance over and instantly see who's working, sleeping, or needs attention.
 
-```
-┌ [1] myapp (3) ───────────────────────┐┌ [2] infra (1) ───────────────────────┐
-│                                      ││                                      │
-│     ▄▀▀▀▀▀▄       ▄▀▀▀▀▄ ▄          ││      ▄▀▀▀▀▀▄                         │
-│    ▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀▄          ││     ▀▀▀▀▀▀▀▀▀                        │
-│    ▀▀ ▀▀ ▀▀▀     ▀▀▀▀▀▀▀▀           ││     ▀▀ ▀▀ ▀▀▀                        │
-│    ▀▀▀▀▀▀▀▀▀     ▀▀▀▀▀▀▀▀           ││     ▀▀▀▀▀▀▀▀▀                        │
-│      ▀   ▀         ▀  ▀             ││       ▀   ▀                           │
-│   api-refactor   write-tests        ││  debug-pipeline                      │
-│    feat/auth      feat/auth         ││       main                           │
-│     Working         Idle            ││      Working                         │
-│   ██░░░░ 45%     ░░░░░░ 8%         ││   █░░░░░ 12%                         │
-│                                      ││                                      │
-│       ▄▀▀▀▀▄                         ││                                      │
-│      ▀▀▀▀▀▀▀▀                        ││                                      │
-│      ▀▀▀▀▀▀▀▀                        ││                                      │
-│      ▀▀▀▀▀▀▀▀                        ││                                      │
-│       ▀▀▀▀▀                          ││                                      │
-│    new-session                       ││                                      │
-│       main                           ││                                      │
-│        New                           ││                                      │
-│     ░░░░░░ 0%                        ││                                      │
-└──────────────────────────────────────┘└──────────────────────────────────────┘
-┌ [3] webapp (1) ──────────────────────┐┌ [4] recon (1) ───────────────────────┐
-│                                      ││                                      │
-│     ▄▀▀▀▀▄ ▄                         ││      ▄▀▀▀▀▀▄                         │
-│    ▀▀▀▀▀▀▀▀▄                         ││     ▀▀▀▀▀▀▀▀▀                        │
-│    ▀▀▀▀▀▀▀▀                          ││     ▀▀ ▀▀ ▀▀▀                        │
-│    ▀▀▀▀▀▀▀▀                          ││     ▀▀▀▀▀▀▀▀▀                        │
-│      ▀  ▀                            ││       ▀   ▀                           │
-│   code-review                        ││      scratch                         │
-│      pr-452                          ││       main                           │
-│       Idle                           ││      Working                         │
-│   █████░ 90%                         ││    ░░░░░░ 3%                         │
-│                                      ││                                      │
-└──────────────────────────────────────┘└──────────────────────────────────────┘
-1-4 zoom  h/l page  v table  r refresh  q quit
-```
+![Tamagotchi View](assets/view.png)
 
-In the terminal, creatures are fully colored — green blobs for Working, blue-grey for Idle, cream eggs for New, and pulsing orange for Input. Working and Input creatures animate; Idle and New stay still.
+Creatures are rendered as colored pixel art using half-block characters. Working and Input creatures animate; Idle and New stay still.
 
 | State | Creature | Color |
 |-------|----------|-------|
@@ -57,6 +20,10 @@ In the terminal, creatures are fully colored — green blobs for Working, blue-g
 | **Input** | Angry blob with furrowed brows | Orange (pulsing) |
 | **Idle** | Sleeping blob with Zzz | Blue-grey |
 | **New** | Egg with spots | Cream |
+
+- **Rooms** group agents by working directory (2×2 grid, paginated)
+- **Zoom** into a room with `1`-`4`, page with `h`/`l`
+- **Context bar** per agent with green/yellow/red coloring
 
 ### Table View (default)
 
