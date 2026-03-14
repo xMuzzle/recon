@@ -90,9 +90,12 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
     let tty_map = tmux::tty_to_session_map();
 
     let mut sessions = Vec::new();
+    let mut claimed_pids: std::collections::HashSet<i32> = std::collections::HashSet::new();
     let cutoff = SystemTime::now() - Duration::from_secs(24 * 3600);
 
-    // Scan all project directories
+    // Collect all candidate JSONL files (skip subdirectories like subagents/)
+    let mut candidates: Vec<(PathBuf, PathBuf, String, SystemTime)> = Vec::new();
+
     let entries = match fs::read_dir(&claude_dir) {
         Ok(e) => e,
         Err(_) => return vec![],
@@ -104,7 +107,7 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
             continue;
         }
 
-        // Find recently modified JSONL files in this project dir
+        // Only scan direct JSONL files, skip subdirectories (subagents, etc.)
         let jsonl_files = match fs::read_dir(&project_dir) {
             Ok(e) => e,
             Err(_) => continue,
@@ -112,6 +115,9 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
 
         for jentry in jsonl_files.flatten() {
             let path = jentry.path();
+            if path.is_dir() {
+                continue;
+            }
             if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
                 let modified = path
                     .metadata()
@@ -128,56 +134,66 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                // Check if we have a previous session for incremental parsing
-                let prev = prev_sessions.get(&session_id);
-                let prev_file_size = prev.map(|s| s.last_file_size).unwrap_or(0);
-                let prev_input = prev.map(|s| s.total_input_tokens).unwrap_or(0);
-                let prev_output = prev.map(|s| s.total_output_tokens).unwrap_or(0);
-                let prev_model = prev.and_then(|s| s.model.clone());
-
-                // Parse the JSONL
-                let info = parse_jsonl(
-                    &path,
-                    prev_file_size,
-                    prev_input,
-                    prev_output,
-                    prev_model,
-                );
-
-                let cwd = info
-                    .cwd
-                    .unwrap_or_else(|| decode_project_path(&project_dir));
-                let project_name = shorten_path(&cwd);
-
-                // Match to a live process
-                let proc = find_matching_process(&live_procs, &session_id, &cwd);
-
-                // Only show sessions with a live process
-                let pid = match proc {
-                    Some(p) => Some(p.pid),
-                    None => continue,
-                };
-
-                // Map to tmux session via TTY
-                let tmux_session = proc
-                    .and_then(|p| tty_map.get(&p.tty).cloned());
-
-                sessions.push(Session {
-                    session_id,
-                    project_name,
-                    cwd,
-                    tmux_session,
-                    model: info.model,
-                    total_input_tokens: info.input_tokens,
-                    total_output_tokens: info.output_tokens,
-                    status: info.status,
-                    pid,
-                    last_activity: info.last_activity,
-                    jsonl_path: path,
-                    last_file_size: info.file_size,
-                });
+                candidates.push((path, project_dir.clone(), session_id, modified));
             }
         }
+    }
+
+    // Sort by modification time (newest first) so the most recent JSONL
+    // for a given CWD claims the process first.
+    candidates.sort_by(|a, b| b.3.cmp(&a.3));
+
+    for (path, project_dir, session_id, _modified) in candidates {
+        // Check if we have a previous session for incremental parsing
+        let prev = prev_sessions.get(&session_id);
+        let prev_file_size = prev.map(|s| s.last_file_size).unwrap_or(0);
+        let prev_input = prev.map(|s| s.total_input_tokens).unwrap_or(0);
+        let prev_output = prev.map(|s| s.total_output_tokens).unwrap_or(0);
+        let prev_model = prev.and_then(|s| s.model.clone());
+
+        // Parse the JSONL
+        let info = parse_jsonl(
+            &path,
+            prev_file_size,
+            prev_input,
+            prev_output,
+            prev_model,
+        );
+
+        let cwd = info
+            .cwd
+            .unwrap_or_else(|| decode_project_path(&project_dir));
+        let project_name = shorten_path(&cwd);
+
+        // Match to a live process (skip already-claimed PIDs)
+        let proc = find_matching_process(&live_procs, &session_id, &cwd, &claimed_pids);
+
+        // Only show sessions with a live process
+        let pid = match proc {
+            Some(p) => p.pid,
+            None => continue,
+        };
+
+        claimed_pids.insert(pid);
+
+        // Map to tmux session via TTY
+        let tmux_session = proc
+            .and_then(|p| tty_map.get(&p.tty).cloned());
+
+        sessions.push(Session {
+            session_id,
+            project_name,
+            cwd,
+            tmux_session,
+            model: info.model,
+            total_input_tokens: info.input_tokens,
+            total_output_tokens: info.output_tokens,
+            status: info.status,
+            pid: Some(pid),
+            last_activity: info.last_activity,
+            jsonl_path: path,
+            last_file_size: info.file_size,
+        });
     }
 
     // Sort by project name for stable ordering
@@ -470,23 +486,26 @@ fn find_matching_process<'a>(
     procs: &'a [LiveProcess],
     session_id: &str,
     cwd: &str,
+    claimed_pids: &std::collections::HashSet<i32>,
 ) -> Option<&'a LiveProcess> {
     // First try matching by session_id in args
     if let Some(p) = procs.iter().find(|p| {
-        p.session_id
-            .as_ref()
-            .map(|id| id == session_id)
-            .unwrap_or(false)
+        !claimed_pids.contains(&p.pid)
+            && p.session_id
+                .as_ref()
+                .map(|id| id == session_id)
+                .unwrap_or(false)
     }) {
         return Some(p);
     }
 
     // Fall back to matching by CWD
     procs.iter().find(|p| {
-        p.cwd
-            .as_ref()
-            .map(|c| c == cwd)
-            .unwrap_or(false)
+        !claimed_pids.contains(&p.pid)
+            && p.cwd
+                .as_ref()
+                .map(|c| c == cwd)
+                .unwrap_or(false)
     })
 }
 

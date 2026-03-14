@@ -45,15 +45,21 @@ pub fn launch_session(name_only: bool) -> Result<String, String> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "recon".to_string());
 
-    let session_name = sanitize_session_name(&dir_name);
+    let base_name = sanitize_session_name(&dir_name);
 
-    // Check if session already exists
-    if session_exists(&session_name) {
-        if !name_only {
-            switch_to_session(&session_name);
+    // Always create a new session — append -2, -3, etc. if name taken
+    let session_name = if !session_exists(&base_name) {
+        base_name.clone()
+    } else {
+        let mut n = 2;
+        loop {
+            let candidate = format!("{base_name}-{n}");
+            if !session_exists(&candidate) {
+                break candidate;
+            }
+            n += 1;
         }
-        return Ok(session_name);
-    }
+    };
 
     // Create new detached session running claude directly.
     // "exec claude" replaces the shell so claude is the session's process.
