@@ -196,6 +196,37 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
         });
     }
 
+    // Also discover tmux sessions running claude that have no JSONL yet
+    let known_tmux: std::collections::HashSet<String> = sessions
+        .iter()
+        .filter_map(|s| s.tmux_session.clone())
+        .collect();
+
+    for (tmux_name, pane_cwd) in discover_claude_tmux_sessions() {
+        if known_tmux.contains(&tmux_name) {
+            continue;
+        }
+        let project_name = std::path::Path::new(&pane_cwd)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| tmux_name.clone());
+
+        sessions.push(Session {
+            session_id: format!("tmux-{tmux_name}"),
+            project_name,
+            cwd: pane_cwd,
+            tmux_session: Some(tmux_name),
+            model: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            status: SessionStatus::Input,
+            pid: None,
+            last_activity: None,
+            jsonl_path: PathBuf::new(),
+            last_file_size: 0,
+        });
+    }
+
     // Sort by project name for stable ordering
     sessions.sort_by(|a, b| a.project_name.cmp(&b.project_name));
     sessions
@@ -547,6 +578,47 @@ fn extract_session_id(args: &str) -> Option<String> {
 use std::sync::Mutex;
 
 static CWD_CACHE: Mutex<Option<HashMap<i32, String>>> = Mutex::new(None);
+
+/// Find tmux sessions whose pane is running claude (by pane_current_command).
+/// Returns Vec<(session_name, pane_cwd)>.
+fn discover_claude_tmux_sessions() -> Vec<(String, String)> {
+    let output = match std::process::Command::new("tmux")
+        .args([
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}\t#{pane_current_command}\t#{pane_current_path}",
+        ])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut results = Vec::new();
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let session_name = parts[0];
+        let command = parts[1];
+        let pane_path = parts[2];
+
+        // Claude shows up as a version number (e.g. "2.1.76") or "claude" or "node"
+        let is_claude = command.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+            || command == "claude"
+            || command == "node";
+
+        if is_claude {
+            results.push((session_name.to_string(), pane_path.to_string()));
+        }
+    }
+
+    results
+}
 
 fn get_process_cwd(pid: i32) -> Option<String> {
     {

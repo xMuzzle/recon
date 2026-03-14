@@ -1,5 +1,6 @@
 mod app;
 mod model;
+mod new_session;
 mod session;
 mod tmux;
 mod ui;
@@ -19,34 +20,45 @@ use app::App;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    let cmd = args.get(1).map(|s| s.as_str());
 
-    if args.get(1).map(|s| s.as_str()) == Some("launch") {
-        let name_only = args.iter().any(|a| a == "--name-only");
-        match tmux::launch_session(name_only) {
-            Ok(name) => {
-                if name_only {
-                    print!("{name}");
-                } else {
-                    eprintln!("Session: {name}");
+    match cmd {
+        Some("new") => {
+            let result = new_session::run_new_session_form()?;
+            if let Some(name) = result {
+                tmux::switch_to_session(&name);
+            }
+            return Ok(());
+        }
+        Some("launch") => {
+            let name_only = args.iter().any(|a| a == "--name-only");
+            let (default_name, cwd) = tmux::default_new_session_info();
+            match tmux::create_session(&default_name, &cwd) {
+                Ok(name) => {
+                    if name_only {
+                        print!("{name}");
+                    } else {
+                        tmux::switch_to_session(&name);
+                        eprintln!("Session: {name}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
             }
-            Err(e) => {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            }
+            return Ok(());
         }
-        return Ok(());
+        Some("--json") => {
+            let mut app = App::new();
+            app.refresh();
+            println!("{}", app.to_json());
+            return Ok(());
+        }
+        _ => {}
     }
 
-    if args.iter().any(|a| a == "--json") {
-        let mut app = App::new();
-        app.refresh();
-        let output = app.to_json();
-        println!("{output}");
-        return Ok(());
-    }
-
-    // Setup terminal
+    // Default: TUI dashboard
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -55,7 +67,6 @@ fn main() -> io::Result<()> {
 
     let result = run_app(&mut terminal);
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;

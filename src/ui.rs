@@ -25,6 +25,7 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
         Cell::from(" # "),
         Cell::from("Session"),
         Cell::from("Project"),
+        Cell::from("Directory"),
         Cell::from("Status"),
         Cell::from("Model"),
         Cell::from("Tokens"),
@@ -71,10 +72,13 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
                 .map(format_timestamp)
                 .unwrap_or_else(|| "—".to_string());
 
+            let cwd_display = shorten_home(&session.cwd);
+
             let row = Row::new(vec![
                 Cell::from(num),
                 Cell::from(tmux_name.to_string()),
                 Cell::from(session.project_name.clone()),
+                Cell::from(cwd_display),
                 Cell::from(session.status.label()).style(status_style),
                 Cell::from(session.model_display(&app.effort_level)),
                 Cell::from(session.token_display()).style(token_style),
@@ -92,11 +96,12 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
     let widths = [
         Constraint::Length(4),
         Constraint::Length(16),
-        Constraint::Min(15),
+        Constraint::Length(14),
+        Constraint::Min(20),
         Constraint::Length(10),
         Constraint::Length(20),
         Constraint::Length(14),
-        Constraint::Length(20),
+        Constraint::Length(14),
     ];
 
     let table = Table::new(rows, widths)
@@ -122,6 +127,17 @@ fn render_footer(frame: &mut Frame, area: Rect) {
         Span::raw(" quit"),
     ]));
     frame.render_widget(footer, area);
+}
+
+/// Replace home directory prefix with ~.
+fn shorten_home(path: &str) -> String {
+    if let Some(home) = dirs::home_dir() {
+        let home_str = home.to_string_lossy();
+        if let Some(rest) = path.strip_prefix(home_str.as_ref()) {
+            return format!("~{rest}");
+        }
+    }
+    path.to_string()
 }
 
 /// Format an ISO timestamp into a relative or short time string.

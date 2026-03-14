@@ -34,18 +34,10 @@ pub fn switch_to_session(name: &str) {
         .status();
 }
 
-/// Launch claude in a new tmux session named after the current directory.
+/// Launch claude in a new tmux session with the given name and working directory.
 /// Returns the session name on success.
-pub fn launch_session(name_only: bool) -> Result<String, String> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("Failed to get current directory: {e}"))?;
-
-    let dir_name = cwd
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "recon".to_string());
-
-    let base_name = sanitize_session_name(&dir_name);
+pub fn create_session(name: &str, cwd: &str) -> Result<String, String> {
+    let base_name = sanitize_session_name(name);
 
     // Always create a new session — append -2, -3, etc. if name taken
     let session_name = if !session_exists(&base_name) {
@@ -61,9 +53,6 @@ pub fn launch_session(name_only: bool) -> Result<String, String> {
         }
     };
 
-    // Create new detached session running claude directly.
-    // "exec claude" replaces the shell so claude is the session's process.
-    // When claude exits, the session closes.
     let claude_path = which_claude().unwrap_or_else(|| "claude".to_string());
     let status = Command::new("tmux")
         .args([
@@ -72,7 +61,7 @@ pub fn launch_session(name_only: bool) -> Result<String, String> {
             "-s",
             &session_name,
             "-c",
-            &cwd.to_string_lossy(),
+            cwd,
             &claude_path,
         ])
         .status()
@@ -82,11 +71,21 @@ pub fn launch_session(name_only: bool) -> Result<String, String> {
         return Err("tmux new-session failed".to_string());
     }
 
-    if !name_only {
-        switch_to_session(&session_name);
-    }
-
     Ok(session_name)
+}
+
+/// Get default session name and cwd for a new session.
+pub fn default_new_session_info() -> (String, String) {
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+
+    let name = std::path::Path::new(&cwd)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "claude".to_string());
+
+    (name, cwd)
 }
 
 fn session_exists(name: &str) -> bool {
