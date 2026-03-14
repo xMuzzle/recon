@@ -1,8 +1,8 @@
 # recon
 
-A TUI dashboard for monitoring [Claude Code](https://claude.ai/claude-code) sessions running inside **tmux**.
+A tmux-native dashboard for managing [Claude Code](https://claude.ai/claude-code) agents.
 
-See all your Claude sessions at a glance — what they're working on, which need your attention, and how much context they've consumed.
+Run multiple Claude Code sessions in tmux, then manage them all without ever leaving the terminal — see what each agent is working on, which ones need your attention, switch between them, kill or spawn new ones, and resume past sessions. All from a single keybinding.
 
 ## Views
 
