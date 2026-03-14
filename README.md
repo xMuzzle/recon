@@ -92,6 +92,19 @@ recon new          # Interactive new session form
 | `r` | Force refresh |
 | `q` / `Esc` | Quit |
 
+## tmux config
+
+The included `tmux.conf` provides keybindings to open recon as a popup overlay:
+
+```bash
+# Add to your ~/.tmux.conf
+bind r display-popup -E -w 80% -h 60% "recon"        # prefix + r → dashboard
+bind n display-popup -E -w 80% -h 60% "recon new"    # prefix + n → new session
+bind X confirm-before -p "Kill session #S? (y/n)" kill-session
+```
+
+This lets you pop open the dashboard from any tmux session, pick a session with `Enter`, and jump straight to it.
+
 ## Features
 
 - **Live status** — polls every 2s, incremental JSONL parsing
