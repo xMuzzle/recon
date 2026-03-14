@@ -195,12 +195,12 @@ pub fn run_resume_picker() -> io::Result<Option<(String, String)>> {
                     .collect();
 
                 let widths = [
-                    Constraint::Length(4),
-                    Constraint::Length(10),
-                    Constraint::Min(20),
-                    Constraint::Length(16),
-                    Constraint::Length(10),
-                    Constraint::Length(14),
+                    Constraint::Length(4),   // #
+                    Constraint::Length(12),  // Session ID (8 chars + padding)
+                    Constraint::Length(24),  // Git(Project::Branch)
+                    Constraint::Length(14),  // Model
+                    Constraint::Length(14),  // Tokens (e.g. 269k / 1M)
+                    Constraint::Min(12),    // Last Active
                 ];
 
                 let table = Table::new(rows, widths).header(header).block(block);
