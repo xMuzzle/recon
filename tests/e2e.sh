@@ -18,7 +18,11 @@ TMPDIR_INPUT="/tmp/recon-e2e-${RID}-input"
 TMPDIR_RESUME="/tmp/recon-e2e-${RID}-resume"
 TMPFILE="/tmp/recon-e2e-${RID}-testfile.txt"
 
-echo "Test run ID: $RID"
+CLAUDE_MODEL="${CLAUDE_MODEL:-sonnet}"
+CLAUDE_EFFORT="${CLAUDE_EFFORT:-low}"
+CLAUDE_FLAGS="--model $CLAUDE_MODEL --effort $CLAUDE_EFFORT"
+
+echo "Test run ID: $RID (model=$CLAUDE_MODEL, effort=$CLAUDE_EFFORT)"
 
 # --- Cleanup ---
 cleanup() {
@@ -54,7 +58,7 @@ tmux start-server 2>/dev/null || true
 create_session() {
     local name="$1" cwd="$2"
     mkdir -p "$cwd"
-    tmux new-session -d -s "$name" -c "$cwd" "$(which claude)"
+    tmux new-session -d -s "$name" -c "$cwd" "$(which claude) $CLAUDE_FLAGS"
 }
 
 send_to_session() {
@@ -115,7 +119,7 @@ fi
 # Any prompt triggers Working during streaming. Use one that takes a few seconds.
 # Wait for the TUI to be fully ready for input (status bar shows "? for shortcuts")
 sleep 3
-send_to_session "$S_NEW" "write a 200 word essay about the history of unix"
+send_to_session "$S_NEW" "write a 500 word essay about the history of unix"
 
 if wait_for_state "$S_NEW" "Working" 15; then
     report pass "Working state detected for $S_NEW"
@@ -125,7 +129,7 @@ fi
 
 # --- Test 3: Idle state ---
 # After the essay response finishes, claude should return to idle
-if wait_for_state "$S_NEW" "Idle" 30; then
+if wait_for_state "$S_NEW" "Idle" 60; then
     report pass "Idle state detected for $S_NEW"
 else
     report fail "Idle state detected for $S_NEW"
@@ -201,7 +205,7 @@ fi
 CLAUDE_PATH="$(which claude)"
 mkdir -p "$TMPDIR_RESUME"
 tmux new-session -d -s "$S_RESUME_ORIG" -c "$TMPDIR_RESUME" \
-    "bash -c '$CLAUDE_PATH 2>&1; exec bash'"
+    "bash -c '$CLAUDE_PATH $CLAUDE_FLAGS 2>&1; exec bash'"
 
 wait_for_state "$S_RESUME_ORIG" "New" 15 >/dev/null 2>&1 || true
 sleep 3
@@ -214,13 +218,13 @@ TOKENS_BEFORE=$("$RECON" --json 2>/dev/null | jq -r \
     --arg n "$S_RESUME_ORIG" \
     '.sessions[] | select(.tmux_session == $n) | .total_input_tokens')
 
-# Exit claude with Ctrl+C — it prints "Resume this session with: claude --resume <id>"
-tmux send-keys -t "$S_RESUME_ORIG" C-c
+# Exit claude — it prints "Resume this session with: claude --resume <id>"
+send_to_session "$S_RESUME_ORIG" "exit"
 sleep 4
 
 # Parse the original session-id from the pane exit output
 ORIG_SESSION_ID=$(tmux capture-pane -t "$S_RESUME_ORIG" -p -S -200 2>/dev/null \
-    | grep -oE 'claude --resume [a-zA-Z0-9-]+' | tail -1 | awk '{print $NF}')
+    | grep -oE 'claude --resume [a-zA-Z0-9-]+' | tail -1 | awk '{print $NF}' || true)
 
 if [[ -z "$ORIG_SESSION_ID" ]]; then
     echo "  Could not parse resume session-id. Pane content:"
