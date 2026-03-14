@@ -167,8 +167,8 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
             .unwrap_or_else(|| decode_project_path(&project_dir));
         let project_name = shorten_path(&cwd);
 
-        // Match to a live process (skip already-claimed PIDs)
-        let proc = find_matching_process(&live_procs, &session_id, &cwd, &claimed_pids);
+        // Match to a live process by session ID
+        let proc = find_matching_process(&live_procs, &session_id, &claimed_pids);
 
         // Only show sessions with a live process
         let pid = match proc {
@@ -450,10 +450,15 @@ fn determine_status(_path: &Path, input_tokens: u64, output_tokens: u64, tmux_se
     }
 }
 
-/// Determine status by inspecting the tmux pane content.
+/// Determine status by inspecting the Claude Code TUI status bar.
+///
+/// The last non-empty line in the pane is always the status bar:
+///   "esc to interrupt"  → agent is streaming or running a tool
+///   "Esc to cancel"     → permission prompt waiting for user input
+///   anything else       → idle, waiting for user input
 fn pane_status(session_name: &str) -> SessionStatus {
     let output = match std::process::Command::new("tmux")
-        .args(["capture-pane", "-t", session_name, "-p", "-S", "-5"])
+        .args(["capture-pane", "-t", session_name, "-p"])
         .output()
     {
         Ok(o) if o.status.success() => o,
@@ -467,34 +472,62 @@ fn pane_status(session_name: &str) -> SessionStatus {
         if trimmed.is_empty() {
             continue;
         }
-        // Agent is running a tool/command
-        if trimmed.contains("(running)") || trimmed.contains("Streaming") {
+        if trimmed.contains("esc to interrupt") {
             return SessionStatus::Working;
         }
-        // Permission prompt — blocked on user action
-        if trimmed.starts_with("Do you want to")
-            || trimmed.starts_with("❯ 1.")
-            || trimmed.contains("Esc to cancel")
-        {
+        if trimmed.contains("Esc to cancel") {
             return SessionStatus::Input;
         }
-        break;
+        return SessionStatus::Idle;
     }
 
     SessionStatus::Idle
 }
 
-// --- Live process discovery (minimal, just for liveness check) ---
+// --- Live process discovery ---
 
 #[derive(Debug)]
 struct LiveProcess {
     pid: i32,
     tty: String,
     session_id: Option<String>,
-    cwd: Option<String>,
+}
+
+/// Read ~/.claude/sessions/{PID}.json files to build a PID → sessionId map.
+/// This is the authoritative source for which process owns which session.
+fn read_pid_session_map() -> HashMap<i32, String> {
+    let sessions_dir = match dirs::home_dir() {
+        Some(h) => h.join(".claude").join("sessions"),
+        None => return HashMap::new(),
+    };
+
+    let entries = match fs::read_dir(&sessions_dir) {
+        Ok(e) => e,
+        Err(_) => return HashMap::new(),
+    };
+
+    let mut map = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map(|e| e == "json").unwrap_or(false) {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let (Some(pid), Some(sid)) = (
+                        v.get("pid").and_then(|p| p.as_i64()),
+                        v.get("sessionId").and_then(|s| s.as_str()),
+                    ) {
+                        map.insert(pid as i32, sid.to_string());
+                    }
+                }
+            }
+        }
+    }
+    map
 }
 
 fn discover_live_claude_procs() -> Vec<LiveProcess> {
+    let pid_session_map = read_pid_session_map();
+
     let output = match std::process::Command::new("ps")
         .args(["-eo", "pid,tty,args"])
         .output()
@@ -522,14 +555,18 @@ fn discover_live_claude_procs() -> Vec<LiveProcess> {
             Err(_) => continue,
         };
         let tty = parts[1].to_string();
-        let session_id = extract_session_id(&args_joined);
-        let cwd = get_process_cwd(pid);
+
+        // Session ID: prefer the authoritative PID→session map,
+        // fall back to --resume flag in args
+        let session_id = pid_session_map
+            .get(&pid)
+            .cloned()
+            .or_else(|| extract_session_id(&args_joined));
 
         procs.push(LiveProcess {
             pid,
             tty,
             session_id,
-            cwd,
         });
     }
 
@@ -539,26 +576,14 @@ fn discover_live_claude_procs() -> Vec<LiveProcess> {
 fn find_matching_process<'a>(
     procs: &'a [LiveProcess],
     session_id: &str,
-    cwd: &str,
     claimed_pids: &std::collections::HashSet<i32>,
 ) -> Option<&'a LiveProcess> {
-    // First try matching by session_id in args
-    if let Some(p) = procs.iter().find(|p| {
+    // Match by session_id (from ~/.claude/sessions/{PID}.json or --resume args)
+    procs.iter().find(|p| {
         !claimed_pids.contains(&p.pid)
             && p.session_id
                 .as_ref()
                 .map(|id| id == session_id)
-                .unwrap_or(false)
-    }) {
-        return Some(p);
-    }
-
-    // Fall back to matching by CWD
-    procs.iter().find(|p| {
-        !claimed_pids.contains(&p.pid)
-            && p.cwd
-                .as_ref()
-                .map(|c| c == cwd)
                 .unwrap_or(false)
     })
 }
@@ -583,10 +608,6 @@ fn extract_session_id(args: &str) -> Option<String> {
     }
     None
 }
-
-use std::sync::Mutex;
-
-static CWD_CACHE: Mutex<Option<HashMap<i32, String>>> = Mutex::new(None);
 
 /// Find tmux sessions whose pane is running claude (by pane_current_command).
 /// Returns Vec<(session_name, pane_cwd)>.
@@ -629,31 +650,3 @@ fn discover_claude_tmux_sessions() -> Vec<(String, String)> {
     results
 }
 
-fn get_process_cwd(pid: i32) -> Option<String> {
-    {
-        let cache = CWD_CACHE.lock().unwrap();
-        if let Some(cwd) = cache.as_ref().and_then(|c| c.get(&pid)) {
-            return Some(cwd.clone());
-        }
-    }
-
-    let output = std::process::Command::new("lsof")
-        .args(["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"])
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(path) = line.strip_prefix('n') {
-            if path.starts_with('/') {
-                let mut cache = CWD_CACHE.lock().unwrap();
-                if cache.is_none() {
-                    *cache = Some(HashMap::new());
-                }
-                cache.as_mut().unwrap().insert(pid, path.to_string());
-                return Some(path.to_string());
-            }
-        }
-    }
-    None
-}
