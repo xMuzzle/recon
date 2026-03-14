@@ -149,6 +149,15 @@ pub fn run_resume_picker() -> io::Result<Option<(String, String)>> {
                 ])
                 .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
+                // Compute max git column width from actual data
+                let git_col_width = entries.iter().map(|e| {
+                    let project = dir_name(&e.cwd);
+                    match &e.branch {
+                        Some(b) => project.len() + 2 + b.len(), // "project::branch"
+                        None => project.len(),
+                    }
+                }).max().unwrap_or(10) as u16 + 2; // +2 for padding
+
                 let rows: Vec<Row> = entries
                     .iter()
                     .enumerate()
@@ -195,12 +204,12 @@ pub fn run_resume_picker() -> io::Result<Option<(String, String)>> {
                     .collect();
 
                 let widths = [
-                    Constraint::Length(4),   // #
-                    Constraint::Length(12),  // Session ID (8 chars + padding)
-                    Constraint::Length(24),  // Git(Project::Branch)
-                    Constraint::Length(14),  // Model
-                    Constraint::Length(14),  // Tokens (e.g. 269k / 1M)
-                    Constraint::Min(12),    // Last Active
+                    Constraint::Length(4),              // #
+                    Constraint::Length(12),             // Session ID
+                    Constraint::Length(git_col_width),  // Git(Project::Branch)
+                    Constraint::Length(14),             // Model
+                    Constraint::Length(14),             // Tokens
+                    Constraint::Min(12),               // Last Active
                 ];
 
                 let table = Table::new(rows, widths).header(header).block(block);
