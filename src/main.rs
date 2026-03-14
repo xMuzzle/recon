@@ -49,6 +49,29 @@ fn main() -> io::Result<()> {
             }
             return Ok(());
         }
+        Some("--resume") => {
+            let session_id = match args.get(2) {
+                Some(id) => id,
+                None => {
+                    eprintln!("Usage: recon --resume <session-id> [--name <name>]");
+                    std::process::exit(1);
+                }
+            };
+            let name = args.iter().position(|a| a == "--name")
+                .and_then(|i| args.get(i + 1))
+                .map(|s| s.as_str());
+            match tmux::resume_session(session_id, name) {
+                Ok(sess) => {
+                    tmux::switch_to_session(&sess);
+                    eprintln!("Resumed in session: {sess}");
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
         Some("--json") => {
             let mut app = App::new();
             app.refresh();

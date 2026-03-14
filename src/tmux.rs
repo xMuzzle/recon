@@ -1,11 +1,17 @@
 use std::process::Command;
 
-/// Switch to a tmux session.
+/// Switch to a tmux session (inside tmux) or attach to it (outside tmux).
 pub fn switch_to_session(name: &str) {
-    // switch-client works even from run-shell context
-    let _ = Command::new("tmux")
-        .args(["switch-client", "-t", name])
-        .status();
+    let inside_tmux = std::env::var("TMUX").is_ok();
+    if inside_tmux {
+        let _ = Command::new("tmux")
+            .args(["switch-client", "-t", name])
+            .status();
+    } else {
+        let _ = Command::new("tmux")
+            .args(["attach-session", "-t", name])
+            .status();
+    }
 }
 
 /// Launch claude in a new tmux session with the given name and working directory.
@@ -37,6 +43,53 @@ pub fn create_session(name: &str, cwd: &str) -> Result<String, String> {
             "-c",
             cwd,
             &claude_path,
+        ])
+        .status()
+        .map_err(|e| format!("Failed to create tmux session: {e}"))?;
+
+    if !status.success() {
+        return Err("tmux new-session failed".to_string());
+    }
+
+    Ok(session_name)
+}
+
+/// Resume a claude session in a new tmux session.
+pub fn resume_session(session_id: &str, name: Option<&str>) -> Result<String, String> {
+    let tmux_name = name
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| session_id[..6.min(session_id.len())].to_string());
+
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+
+    let base_name = sanitize_session_name(&tmux_name);
+    let session_name = if !session_exists(&base_name) {
+        base_name.clone()
+    } else {
+        let mut n = 2;
+        loop {
+            let candidate = format!("{base_name}-{n}");
+            if !session_exists(&candidate) {
+                break candidate;
+            }
+            n += 1;
+        }
+    };
+
+    let claude_path = which_claude().unwrap_or_else(|| "claude".to_string());
+    let status = Command::new("tmux")
+        .args([
+            "new-session",
+            "-d",
+            "-s",
+            &session_name,
+            "-c",
+            &cwd,
+            &claude_path,
+            "--resume",
+            session_id,
         ])
         .status()
         .map_err(|e| format!("Failed to create tmux session: {e}"))?;
