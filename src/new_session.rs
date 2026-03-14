@@ -4,7 +4,7 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };

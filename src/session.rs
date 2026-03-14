@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -341,7 +341,6 @@ struct ParsedInfo {
     model: Option<String>,
     cwd: Option<String>,
     last_activity: Option<String>,
-    status: SessionStatus,
     file_size: u64,
 }
 
@@ -446,17 +445,11 @@ fn decode_project_path(project_dir: &Path) -> String {
 #[derive(Deserialize)]
 struct JsonlEntry {
     #[serde(default)]
-    r#type: String,
-    #[serde(default)]
-    subtype: Option<String>,
-    #[serde(default)]
     message: Option<MessageEntry>,
     #[serde(default)]
     timestamp: Option<String>,
     #[serde(default)]
     cwd: Option<String>,
-    #[serde(rename = "sessionId", default)]
-    session_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -497,7 +490,6 @@ fn parse_jsonl(
                 model: prev_model,
                 cwd: None,
                 last_activity: prev_activity,
-                status: SessionStatus::Idle,
                 file_size: 0,
             }
         }
@@ -512,7 +504,6 @@ fn parse_jsonl(
             model: prev_model,
             cwd: None,
             last_activity: prev_activity,
-            status: SessionStatus::Idle,
             file_size,
         };
     }
@@ -579,16 +570,12 @@ fn parse_jsonl(
         }
     }
 
-    // Get status from the last entry in the file
-    let status = SessionStatus::Idle; // placeholder, resolved later
-
     ParsedInfo {
         input_tokens: total_input,
         output_tokens: total_output,
         model,
         cwd,
         last_activity,
-        status,
         file_size,
     }
 }
