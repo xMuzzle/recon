@@ -104,6 +104,7 @@ recon --json                           # JSON output (for scripting)
 recon launch                           # Create a new claude session in the current directory
 recon new                              # Interactive new session form
 recon resume                           # Interactive resume picker
+recon next                             # Jump directly to the next agent waiting for input
 recon --resume <session-id>            # Resume a claude session in a new tmux session
 recon --resume <session-id> --name foo # Resume with a custom tmux session name
 ```
@@ -140,9 +141,10 @@ The included `tmux.conf` provides keybindings to open recon as a popup overlay:
 
 ```bash
 # Add to your ~/.tmux.conf
-bind r display-popup -E -w 80% -h 60% "recon"        # prefix + r → dashboard
+bind g display-popup -E -w 80% -h 60% "recon"        # prefix + g → dashboard
 bind n display-popup -E -w 80% -h 60% "recon new"    # prefix + n → new session
-bind R display-popup -E -w 80% -h 60% "recon resume" # prefix + R → resume picker
+bind r display-popup -E -w 80% -h 60% "recon resume" # prefix + r → resume picker
+bind i run-shell "recon next"                         # prefix + i → jump to next input agent
 bind X confirm-before -p "Kill session #S? (y/n)" kill-session
 ```
 

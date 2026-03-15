@@ -94,6 +94,16 @@ fn main() -> io::Result<()> {
             }
             return Ok(());
         }
+        Some("next") => {
+            let mut app = App::new();
+            app.refresh();
+            if let Some(session) = app.sessions.iter().find(|s| s.status == session::SessionStatus::Input) {
+                if let Some(name) = &session.tmux_session {
+                    tmux::switch_to_session(name);
+                }
+            }
+            return Ok(());
+        }
         Some("--json") => {
             let mut app = App::new();
             app.refresh();

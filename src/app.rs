@@ -66,9 +66,22 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if matches!(key.code, KeyCode::Tab | KeyCode::Char('i')) {
+            self.jump_to_next_input();
+            return;
+        }
         match self.view_mode {
             ViewMode::Table => self.handle_key_table(key),
             ViewMode::View => self.handle_key_view(key),
+        }
+    }
+
+    fn jump_to_next_input(&mut self) {
+        if let Some(session) = self.sessions.iter().find(|s| s.status == session::SessionStatus::Input) {
+            if let Some(name) = &session.tmux_session {
+                tmux::switch_to_session(name);
+                self.should_quit = true;
+            }
         }
     }
 
