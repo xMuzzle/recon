@@ -18,7 +18,7 @@ TMPDIR_INPUT="/tmp/recon-e2e-${RID}-input"
 TMPDIR_RESUME="/tmp/recon-e2e-${RID}-resume"
 TMPFILE="/tmp/recon-e2e-${RID}-testfile.txt"
 
-CLAUDE_MODEL="${CLAUDE_MODEL:-sonnet}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-haiku}"
 CLAUDE_EFFORT="${CLAUDE_EFFORT:-low}"
 CLAUDE_FLAGS="--model $CLAUDE_MODEL --effort $CLAUDE_EFFORT"
 
@@ -68,7 +68,7 @@ send_to_session() {
 
 get_state() {
     local name="$1"
-    "$RECON" --json 2>/dev/null | jq -r \
+    "$RECON" json 2>/dev/null | jq -r \
         --arg name "$name" \
         '.sessions[] | select(.tmux_session == $name) | .status' \
     || echo ""
@@ -149,7 +149,7 @@ wait_for_state "$S_TWIN" "Idle" 20 >/dev/null 2>&1 || true
 tokens_stable=true
 prev_new="" prev_twin=""
 for i in $(seq 1 6); do
-    json=$("$RECON" --json 2>/dev/null)
+    json=$("$RECON" json 2>/dev/null)
     cur_new=$(echo "$json" | jq -r --arg n "$S_NEW" '.sessions[] | select(.tmux_session == $n) | .total_input_tokens')
     cur_twin=$(echo "$json" | jq -r --arg n "$S_TWIN" '.sessions[] | select(.tmux_session == $n) | .total_input_tokens')
     if [[ -n "$prev_new" && ("$cur_new" != "$prev_new" || "$cur_twin" != "$prev_twin") ]]; then
@@ -174,7 +174,7 @@ fi
 
 # --- Test 5: Sort by creation time (newest first) ---
 # $S_TWIN was created after $S_NEW — it should appear first in the output
-json=$("$RECON" --json 2>/dev/null)
+json=$("$RECON" json 2>/dev/null)
 idx_new=$(echo "$json" | jq -r --arg n "$S_NEW" '.sessions | to_entries[] | select(.value.tmux_session == $n) | .key')
 idx_twin=$(echo "$json" | jq -r --arg n "$S_TWIN" '.sessions | to_entries[] | select(.value.tmux_session == $n) | .key')
 
@@ -214,7 +214,7 @@ sleep 3
 send_to_session "$S_RESUME_ORIG" "say exactly the words: recon resume test"
 wait_for_state "$S_RESUME_ORIG" "Idle" 30 >/dev/null 2>&1 || true
 
-TOKENS_BEFORE=$("$RECON" --json 2>/dev/null | jq -r \
+TOKENS_BEFORE=$("$RECON" json 2>/dev/null | jq -r \
     --arg n "$S_RESUME_ORIG" \
     '.sessions[] | select(.tmux_session == $n) | .total_input_tokens')
 
@@ -235,12 +235,12 @@ else
 
     # Resume via recon --resume (no-attach: creates detached session, switch-client skips if inside tmux with no client)
     # Use --name to control the session name for lookup
-    "$RECON" --resume "$ORIG_SESSION_ID" --name "$S_RESUME_NEW" --no-attach 2>/dev/null || true
+    "$RECON" resume --id "$ORIG_SESSION_ID" --name "$S_RESUME_NEW" --no-attach 2>/dev/null || true
 
     # Wait for the session file to be written and recon to refresh
     sleep 8
 
-    TOKENS_RESUMED=$("$RECON" --json 2>/dev/null | jq -r \
+    TOKENS_RESUMED=$("$RECON" json 2>/dev/null | jq -r \
         --arg n "$S_RESUME_NEW" \
         '.sessions[] | select(.tmux_session == $n) | .total_input_tokens')
 
@@ -250,7 +250,7 @@ else
         report pass "Resume: $S_RESUME_NEW shows ${TOKENS_RESUMED} tokens (original had ${TOKENS_BEFORE})"
     else
         echo "  Original tokens: $TOKENS_BEFORE, resumed tokens: '$TOKENS_RESUMED'"
-        "$RECON" --json 2>/dev/null | jq -r --arg n "$S_RESUME_NEW" \
+        "$RECON" json 2>/dev/null | jq -r --arg n "$S_RESUME_NEW" \
             '.sessions[] | select(.tmux_session == $n)' | sed 's/^/    /'
         report fail "Resume: expected non-zero tokens for resumed session"
     fi
