@@ -128,11 +128,7 @@ fn run_tui(start_mode: ViewMode) -> io::Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    if let Err(e) = result {
-        eprintln!("Error: {e}");
-    }
-
-    Ok(())
+    result
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, start_mode: ViewMode) -> io::Result<()> {

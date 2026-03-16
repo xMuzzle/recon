@@ -259,16 +259,21 @@ fi
 # --- Test 8: Resume idempotency (no-op if already running) ---
 # The resumed session from Test 7 ($S_RESUME_NEW) should still be live.
 # Resuming it again should NOT create a new tmux session.
-SESSIONS_BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep "^e2e-${RID}-" | wc -l | tr -d ' ')
+if [[ -z "${ORIG_SESSION_ID:-}" ]]; then
+    report fail "Resume idempotency: missing ORIG_SESSION_ID from Test 7"
+else
+SESSIONS_BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c "^e2e-${RID}-" || true)
 
 RESUME_OUTPUT=$("$RECON" resume --id "$ORIG_SESSION_ID" --name "$S_RESUME_NEW" --no-attach 2>&1 || true)
 
-SESSIONS_AFTER=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep "^e2e-${RID}-" | wc -l | tr -d ' ')
+SESSIONS_AFTER=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c "^e2e-${RID}-" || true)
 
 if (( SESSIONS_BEFORE == SESSIONS_AFTER )); then
     report pass "Resume idempotency: no new session created (before=$SESSIONS_BEFORE, after=$SESSIONS_AFTER)"
 else
+    echo "  resume output: $RESUME_OUTPUT"
     report fail "Resume idempotency: session count changed (before=$SESSIONS_BEFORE, after=$SESSIONS_AFTER)"
+fi
 fi
 
 # --- Summary ---

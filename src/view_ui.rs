@@ -669,6 +669,7 @@ mod tests {
             started_at: 0,
             jsonl_path: PathBuf::new(),
             last_file_size: 0,
+            active_subagents: 0,
         }
     }
 

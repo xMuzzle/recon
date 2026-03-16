@@ -296,14 +296,14 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
     // session ID, but Claude Code may rotate session IDs within the same process. So we
     // index by session_id, JSONL stem, AND decoded project CWD as fallback.
     let mut parent_by_id: HashMap<String, usize> = HashMap::new();
-    let mut parent_by_cwd: HashMap<String, usize> = HashMap::new();
+    let mut parent_by_cwd: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, s) in sessions.iter().enumerate() {
         parent_by_id.insert(s.session_id.clone(), i);
         if let Some(stem) = s.jsonl_path.file_stem() {
             parent_by_id.insert(stem.to_string_lossy().to_string(), i);
         }
         if !s.cwd.is_empty() {
-            parent_by_cwd.insert(s.cwd.clone(), i);
+            parent_by_cwd.entry(s.cwd.clone()).or_default().push(i);
         }
     }
 
@@ -348,10 +348,14 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
                 .unwrap_or_default();
 
             // Try matching by session ID first, then fall back to project CWD
+            // (only use CWD fallback if there's exactly one parent in that directory)
             let parent_idx = parent_by_id
                 .get(&parent_dir_name)
-                .or_else(|| parent_by_cwd.get(&project_cwd))
-                .copied();
+                .copied()
+                .or_else(|| match parent_by_cwd.get(&project_cwd) {
+                    Some(indices) if indices.len() == 1 => indices.first().copied(),
+                    _ => None,
+                });
 
             let parent_idx = match parent_idx {
                 Some(i) => i,
