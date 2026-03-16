@@ -98,15 +98,16 @@ Requires tmux and [Claude Code](https://claude.ai/claude-code).
 ## Usage
 
 ```bash
-recon                                  # Table dashboard
-recon view                             # Tamagotchi visual dashboard
-recon --json                           # JSON output (for scripting)
-recon launch                           # Create a new claude session in the current directory
-recon new                              # Interactive new session form
-recon resume                           # Interactive resume picker
-recon next                             # Jump directly to the next agent waiting for input
-recon --resume <session-id>            # Resume a claude session in a new tmux session
-recon --resume <session-id> --name foo # Resume with a custom tmux session name
+recon                                        # Table dashboard
+recon view                                   # Tamagotchi visual dashboard
+recon json                                   # JSON output (for scripting)
+recon launch                                 # Create a new claude session in the current directory
+recon launch --name-only                     # Print session name without attaching
+recon new                                    # Interactive new session form
+recon resume                                 # Interactive resume picker
+recon resume --id <session-id>               # Resume a specific session
+recon resume --id <session-id> --name foo    # Resume with a custom tmux session name
+recon next                                   # Jump to the next agent waiting for input
 ```
 
 ### Keybindings — Table View
@@ -115,6 +116,7 @@ recon --resume <session-id> --name foo # Resume with a custom tmux session name
 |---|---|
 | `j` / `k` | Navigate sessions |
 | `Enter` | Switch to selected tmux session |
+| `i` / `Tab` | Jump to next agent waiting for input |
 | `x` | Kill selected session |
 | `v` | Switch to Tamagotchi view |
 | `r` | Force refresh |
@@ -159,7 +161,8 @@ This lets you pop open the dashboard from any tmux session, pick a session with 
 - **Model display** — shows which Claude model and effort level
 - **Resume picker** — `recon resume` scans JSONL files for past sessions, resume any with `Enter`
 - **Multi-session** — handles multiple sessions in the same repo without conflicts
-- **JSON mode** — `recon --json` for scripting and automation
+- **JSON mode** — `recon json` for scripting and automation
+- **Claude Code skill** — ships a [skill file](.claude/skills/recon/SKILL.md) so Claude Code can discover and run recon commands
 
 ## License
 
