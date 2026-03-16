@@ -44,10 +44,17 @@ fn render_table(frame: &mut Frame, app: &App, area: Rect) {
         .map(|(i, session)| {
             let num = format!(" {} ", i + 1);
 
-            let tmux_name = session
-                .tmux_session
-                .as_deref()
-                .unwrap_or("—");
+            let tmux_name = {
+                let base = session
+                    .tmux_session
+                    .as_deref()
+                    .unwrap_or("—");
+                if session.active_subagents > 0 {
+                    format!("{base} [{}]", session.active_subagents)
+                } else {
+                    base.to_string()
+                }
+            };
 
             // Status: colored dot + label
             let (status_dot, status_label, status_color) = match session.status {

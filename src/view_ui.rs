@@ -526,15 +526,22 @@ fn render_character(frame: &mut Frame, session: &Session, area: Rect, tick: u64,
     let sprite_lines = render_sprite_lines(sprite, palette);
     lines.extend(sprite_lines);
 
-    // Session name
-    let name = session.tmux_session.as_deref().unwrap_or("???");
+    // Session name with optional [N] sub-agent badge
+    let name = {
+        let base = session.tmux_session.as_deref().unwrap_or("???");
+        if session.active_subagents > 0 {
+            format!("{base} [{}]", session.active_subagents)
+        } else {
+            base.to_string()
+        }
+    };
     let name_style = if is_selected {
         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     };
     lines.push(Line::from(Span::styled(
-        truncate_str(name, area.width as usize),
+        truncate_str(&name, area.width as usize),
         name_style,
     )));
 

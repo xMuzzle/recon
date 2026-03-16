@@ -43,6 +43,7 @@ pub struct Session {
     pub started_at: u64,
     pub jsonl_path: PathBuf,
     pub last_file_size: u64,
+    pub active_subagents: u32,
 }
 
 impl Session {
@@ -191,6 +192,7 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
                 started_at: live.started_at,
                 jsonl_path: path,
                 last_file_size: info.file_size,
+                active_subagents: 0,
             });
         }
     }
@@ -260,6 +262,7 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
                 started_at: live.started_at,
                 jsonl_path: path,
                 last_file_size: info.file_size,
+                active_subagents: 0,
             });
         } else {
             // No JSONL found — brand-new session, show as New placeholder
@@ -279,7 +282,117 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
                 started_at: live.started_at,
                 jsonl_path: PathBuf::new(),
                 last_file_size: 0,
+                active_subagents: 0,
             });
+        }
+    }
+
+    // --- Sub-agent scanning ---
+    // Sub-agents store JSONLs in <project>/<session-id>/subagents/<agent-id>.jsonl.
+    // Instead of separate entries, count active sub-agents per parent as a [N] badge.
+    // A sub-agent is "active" if its last JSONL entry has no stop_reason: "end_turn".
+    //
+    // Matching sub-agents to parent sessions: the subagents/ directory is named after a
+    // session ID, but Claude Code may rotate session IDs within the same process. So we
+    // index by session_id, JSONL stem, AND decoded project CWD as fallback.
+    let mut parent_by_id: HashMap<String, usize> = HashMap::new();
+    let mut parent_by_cwd: HashMap<String, usize> = HashMap::new();
+    for (i, s) in sessions.iter().enumerate() {
+        parent_by_id.insert(s.session_id.clone(), i);
+        if let Some(stem) = s.jsonl_path.file_stem() {
+            parent_by_id.insert(stem.to_string_lossy().to_string(), i);
+        }
+        if !s.cwd.is_empty() {
+            parent_by_cwd.insert(s.cwd.clone(), i);
+        }
+    }
+
+    let sa_entries = match fs::read_dir(&claude_dir) {
+        Ok(e) => e,
+        Err(_) => {
+            sessions.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
+            return sessions;
+        }
+    };
+
+    let mut subagent_counts: HashMap<usize, u32> = HashMap::new();
+
+    for entry in sa_entries.flatten() {
+        let project_dir = entry.path();
+        if !project_dir.is_dir() {
+            continue;
+        }
+
+        // Decode project dir name to CWD path for fallback matching
+        let project_cwd = decode_project_path(&project_dir);
+
+        let subdirs = match fs::read_dir(&project_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        for subentry in subdirs.flatten() {
+            let session_dir = subentry.path();
+            if !session_dir.is_dir() {
+                continue;
+            }
+
+            let subagents_dir = session_dir.join("subagents");
+            if !subagents_dir.is_dir() {
+                continue;
+            }
+
+            let parent_dir_name = session_dir
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            // Try matching by session ID first, then fall back to project CWD
+            let parent_idx = parent_by_id
+                .get(&parent_dir_name)
+                .or_else(|| parent_by_cwd.get(&project_cwd))
+                .copied();
+
+            let parent_idx = match parent_idx {
+                Some(i) => i,
+                None => continue,
+            };
+
+            let agent_files = match fs::read_dir(&subagents_dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            for agent_entry in agent_files.flatten() {
+                let path = agent_entry.path();
+                if !path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                    continue;
+                }
+
+                let modified = path
+                    .metadata()
+                    .ok()
+                    .and_then(|m| m.modified().ok())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+
+                let age = SystemTime::now()
+                    .duration_since(modified)
+                    .unwrap_or(Duration::MAX);
+
+                if age > SUBAGENT_ACTIVITY_CUTOFF {
+                    continue;
+                }
+
+                if is_subagent_active(&path) {
+                    *subagent_counts.entry(parent_idx).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+
+    for (idx, count) in subagent_counts {
+        if let Some(session) = sessions.get_mut(idx) {
+            session.active_subagents = count;
         }
     }
 
@@ -356,6 +469,35 @@ struct GitInfo {
 static GIT_CACHE: Mutex<Option<HashMap<String, GitInfo>>> = Mutex::new(None);
 
 const GIT_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// How long after last JSONL write a sub-agent is still considered (5 minutes).
+const SUBAGENT_ACTIVITY_CUTOFF: Duration = Duration::from_secs(300);
+
+/// Check if a sub-agent is still active by reading the last line of its JSONL.
+/// A sub-agent is active if the last entry does NOT contain `stop_reason: "end_turn"`.
+fn is_subagent_active(path: &Path) -> bool {
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let reader = BufReader::new(file);
+    let mut last_line = None;
+    for line in reader.lines().flatten() {
+        if !line.trim().is_empty() {
+            last_line = Some(line);
+        }
+    }
+    let Some(line) = last_line else {
+        return true; // Empty file — just started, consider active
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+        return true;
+    };
+    v.get("stop_reason")
+        .and_then(|s| s.as_str())
+        .map(|s| s != "end_turn")
+        .unwrap_or(true)
+}
 
 /// Get the git project name and branch for a directory (cached for 30s).
 fn git_project_info(cwd: &str) -> (String, Option<String>) {
