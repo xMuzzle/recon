@@ -291,6 +291,7 @@ fn group_into_rooms(sessions: &[Session]) -> Vec<Room> {
         b.has_input
             .cmp(&a.has_input)
             .then_with(|| b.last_activity.cmp(&a.last_activity))
+            .then_with(|| a.name.cmp(&b.name))
     });
 
     rooms

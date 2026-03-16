@@ -307,17 +307,11 @@ pub fn discover_sessions(prev_sessions: &HashMap<String, Session>) -> Vec<Sessio
         }
     }
 
-    let sa_entries = match fs::read_dir(&claude_dir) {
-        Ok(e) => e,
-        Err(_) => {
-            sessions.sort_by(|a, b| b.last_activity.cmp(&a.last_activity));
-            return sessions;
-        }
-    };
+    let sa_entries = fs::read_dir(&claude_dir).ok();
 
     let mut subagent_counts: HashMap<usize, u32> = HashMap::new();
 
-    for entry in sa_entries.flatten() {
+    for entry in sa_entries.into_iter().flatten().flatten() {
         let project_dir = entry.path();
         if !project_dir.is_dir() {
             continue;
@@ -484,7 +478,16 @@ fn is_subagent_active(path: &Path) -> bool {
         Ok(f) => f,
         Err(_) => return false,
     };
-    let reader = BufReader::new(file);
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if file_len == 0 {
+        return true; // Empty file — just started, consider active
+    }
+    // Read only the last ~4KB to find the final line
+    let mut reader = BufReader::new(file);
+    let seek_pos = file_len.saturating_sub(4096);
+    if reader.seek(SeekFrom::Start(seek_pos)).is_err() {
+        return true;
+    }
     let mut last_line = None;
     for line in reader.lines().flatten() {
         if !line.trim().is_empty() {
@@ -492,7 +495,7 @@ fn is_subagent_active(path: &Path) -> bool {
         }
     }
     let Some(line) = last_line else {
-        return true; // Empty file — just started, consider active
+        return true;
     };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
         return true;
