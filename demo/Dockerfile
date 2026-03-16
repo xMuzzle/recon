@@ -13,8 +13,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/target/release/recon /usr/local/bin/recon
 COPY demo/demo.sh /demo/demo.sh
 COPY demo/tapes /demo/tapes
-COPY tmux.conf /root/.tmux.conf
+
+RUN useradd -m -u 10001 recon \
+    && mkdir -p /home/recon/.claude/sessions /home/recon/.claude/projects \
+    && chown -R recon:recon /demo /home/recon
+COPY tmux.conf /home/recon/.tmux.conf
 
 RUN chmod +x /usr/local/bin/recon /demo/demo.sh
 
 WORKDIR /demo
+USER recon
+ENV HOME=/home/recon
