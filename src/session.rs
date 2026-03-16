@@ -998,6 +998,10 @@ fn discover_claude_tmux_panes() -> Vec<(i32, String, String)> {
             };
             if let Some(cpid) = claude_pid {
                 results.push((cpid, session_name.to_string(), pane_path.to_string()));
+            } else {
+                // Keep fresh panes discoverable; build_live_session_map will map these to
+                // a tmux-* placeholder until ~/.claude/sessions/{pid}.json is written.
+                results.push((pid, session_name.to_string(), pane_path.to_string()));
             }
         } else if command == "bash" || command == "sh" || command == "zsh" {
             if let Some(claude_pid) = find_claude_child_pid(pid) {
