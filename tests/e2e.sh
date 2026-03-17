@@ -59,6 +59,9 @@ create_session() {
     local name="$1" cwd="$2"
     mkdir -p "$cwd"
     tmux new-session -d -s "$name" -c "$cwd" "$(which claude) $CLAUDE_FLAGS"
+    # Dismiss the workspace trust prompt if it appears
+    sleep 1
+    tmux send-keys -t "$name" Enter
 }
 
 send_to_session() {
@@ -185,7 +188,14 @@ else
 fi
 
 # --- Test 6: Input state (permission prompt) ---
-create_session "$S_INPUT" "$TMPDIR_INPUT"
+# Launch with default permission mode to ensure the file write triggers a prompt,
+# regardless of the user's global permission settings.
+mkdir -p "$TMPDIR_INPUT"
+tmux new-session -d -s "$S_INPUT" -c "$TMPDIR_INPUT" \
+    "$(which claude) $CLAUDE_FLAGS --disallowed-tools Write"
+# Dismiss the workspace trust prompt if it appears
+sleep 1
+tmux send-keys -t "$S_INPUT" Enter
 
 # Wait for it to start
 wait_for_state "$S_INPUT" "New" 15 >/dev/null 2>&1 || true
@@ -206,6 +216,10 @@ CLAUDE_PATH="$(which claude)"
 mkdir -p "$TMPDIR_RESUME"
 tmux new-session -d -s "$S_RESUME_ORIG" -c "$TMPDIR_RESUME" \
     "bash -c '$CLAUDE_PATH $CLAUDE_FLAGS 2>&1; exec bash'"
+
+# Dismiss the workspace trust prompt if it appears
+sleep 1
+tmux send-keys -t "$S_RESUME_ORIG" Enter
 
 wait_for_state "$S_RESUME_ORIG" "New" 15 >/dev/null 2>&1 || true
 sleep 3
