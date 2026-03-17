@@ -1,5 +1,5 @@
 # VHS tape: full recon tour — table → view → zoom → back
-# Run: vhs demo/full-tour.tape
+# Run: vhs demo/tapes/full-tour.tape
 # Prerequisite: ./demo/demo.sh --setup  (in another terminal)
 
 Output demo/out/full-tour.gif

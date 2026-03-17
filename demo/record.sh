@@ -17,8 +17,10 @@ docker build -t recon-demo -f "$SCRIPT_DIR/Dockerfile" "$REPO_DIR"
 echo "=== Recording demo ==="
 mkdir -p "$SCRIPT_DIR/out"
 docker run --rm --entrypoint bash -v "$SCRIPT_DIR/out:/output" recon-demo -c '
+    set -euo pipefail
+
     # Ensure claude dirs exist
-    mkdir -p /root/.claude/sessions /root/.claude/projects
+    mkdir -p ~/.claude/sessions ~/.claude/projects
 
     # Set up fake sessions
     /demo/demo.sh --setup &

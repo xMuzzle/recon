@@ -17,6 +17,7 @@ RID=$(head -c 100 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9' | head -c 4)
 TMPDIR_BASE="/tmp/recon-demo-${RID}"
 SESSIONS_DIR="$HOME/.claude/sessions"
 PROJECTS_DIR="$HOME/.claude/projects"
+mkdir -p "$SESSIONS_DIR" "$PROJECTS_DIR"
 
 echo "Demo ID: $RID"
 
@@ -42,9 +43,12 @@ cleanup() {
     echo ""
     echo "Cleaning up..."
     # Kill demo tmux sessions
-    tmux list-sessions -F '#{session_name}' 2>/dev/null \
-        | grep "^demo-${RID}-" \
-        | while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
+    while read -r s; do
+        tmux kill-session -t "$s" 2>/dev/null || true
+    done < <(
+        tmux list-sessions -F '#{session_name}' 2>/dev/null \
+            | grep "^demo-${RID}-" || true
+    )
     # Remove fake session files
     for f in "${FAKE_SESSION_FILES[@]}"; do
         rm -f "$f"

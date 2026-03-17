@@ -59,6 +59,9 @@ create_session() {
     local name="$1" cwd="$2"
     mkdir -p "$cwd"
     tmux new-session -d -s "$name" -c "$cwd" "$(which claude) $CLAUDE_FLAGS"
+    # Dismiss the workspace trust prompt if it appears
+    sleep 1
+    tmux send-keys -t "$name" Enter
 }
 
 send_to_session() {
@@ -185,7 +188,14 @@ else
 fi
 
 # --- Test 6: Input state (permission prompt) ---
-create_session "$S_INPUT" "$TMPDIR_INPUT"
+# Launch with default permission mode to ensure the file write triggers a prompt,
+# regardless of the user's global permission settings.
+mkdir -p "$TMPDIR_INPUT"
+tmux new-session -d -s "$S_INPUT" -c "$TMPDIR_INPUT" \
+    "$(which claude) $CLAUDE_FLAGS --disallowed-tools Write"
+# Dismiss the workspace trust prompt if it appears
+sleep 1
+tmux send-keys -t "$S_INPUT" Enter
 
 # Wait for it to start
 wait_for_state "$S_INPUT" "New" 15 >/dev/null 2>&1 || true
@@ -206,6 +216,10 @@ CLAUDE_PATH="$(which claude)"
 mkdir -p "$TMPDIR_RESUME"
 tmux new-session -d -s "$S_RESUME_ORIG" -c "$TMPDIR_RESUME" \
     "bash -c '$CLAUDE_PATH $CLAUDE_FLAGS 2>&1; exec bash'"
+
+# Dismiss the workspace trust prompt if it appears
+sleep 1
+tmux send-keys -t "$S_RESUME_ORIG" Enter
 
 wait_for_state "$S_RESUME_ORIG" "New" 15 >/dev/null 2>&1 || true
 sleep 3
@@ -259,16 +273,21 @@ fi
 # --- Test 8: Resume idempotency (no-op if already running) ---
 # The resumed session from Test 7 ($S_RESUME_NEW) should still be live.
 # Resuming it again should NOT create a new tmux session.
-SESSIONS_BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep "^e2e-${RID}-" | wc -l | tr -d ' ')
+if [[ -z "${ORIG_SESSION_ID:-}" ]]; then
+    report fail "Resume idempotency: missing ORIG_SESSION_ID from Test 7"
+else
+SESSIONS_BEFORE=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c "^e2e-${RID}-" || true)
 
 RESUME_OUTPUT=$("$RECON" resume --id "$ORIG_SESSION_ID" --name "$S_RESUME_NEW" --no-attach 2>&1 || true)
 
-SESSIONS_AFTER=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep "^e2e-${RID}-" | wc -l | tr -d ' ')
+SESSIONS_AFTER=$(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -c "^e2e-${RID}-" || true)
 
 if (( SESSIONS_BEFORE == SESSIONS_AFTER )); then
     report pass "Resume idempotency: no new session created (before=$SESSIONS_BEFORE, after=$SESSIONS_AFTER)"
 else
+    echo "  resume output: $RESUME_OUTPUT"
     report fail "Resume idempotency: session count changed (before=$SESSIONS_BEFORE, after=$SESSIONS_AFTER)"
+fi
 fi
 
 # --- Summary ---

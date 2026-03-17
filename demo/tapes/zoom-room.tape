@@ -1,5 +1,5 @@
 # VHS tape: zoom into a room in view mode
-# Run: vhs demo/zoom-room.tape
+# Run: vhs demo/tapes/zoom-room.tape
 # Prerequisite: ./demo/demo.sh --setup  (in another terminal)
 
 Output demo/out/zoom-room.gif

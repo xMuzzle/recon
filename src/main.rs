@@ -68,9 +68,12 @@ fn main() -> io::Result<()> {
             } else {
                 let result = history::run_resume_picker()?;
                 if let Some((session_id, sess_name)) = result {
-                    match tmux::resume_session(&session_id, Some(&sess_name)) {
+                    let resume_name = name.as_deref().or(Some(sess_name.as_str()));
+                    match tmux::resume_session(&session_id, resume_name) {
                         Ok(sess) => {
-                            tmux::switch_to_session(&sess);
+                            if !no_attach {
+                                tmux::switch_to_session(&sess);
+                            }
                             eprintln!("Resumed in session: {sess}");
                         }
                         Err(e) => {
@@ -101,13 +104,11 @@ fn main() -> io::Result<()> {
         Some(Command::Unpark) => {
             park::unpark();
         }
-        Some(Command::View) | None => {
-            let start_mode = if matches!(cli.command, Some(Command::View)) {
-                ViewMode::View
-            } else {
-                ViewMode::Table
-            };
-            run_tui(start_mode)?;
+        Some(Command::View) => {
+            run_tui(ViewMode::View)?;
+        }
+        None => {
+            run_tui(ViewMode::Table)?;
         }
     }
 
@@ -127,11 +128,7 @@ fn run_tui(start_mode: ViewMode) -> io::Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    if let Err(e) = result {
-        eprintln!("Error: {e}");
-    }
-
-    Ok(())
+    result
 }
 
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, start_mode: ViewMode) -> io::Result<()> {
