@@ -489,7 +489,7 @@ fn is_subagent_active(path: &Path) -> bool {
         return true;
     }
     let mut last_line = None;
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         if !line.trim().is_empty() {
             last_line = Some(line);
         }
